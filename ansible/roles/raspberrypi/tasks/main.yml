@@ -193,37 +193,6 @@
       key: "{{ lookup('file', home_contents_dir_in_host + '/.ssh/authorized_keys') }}"
 
 
-- name: apt-daily service
-  tags:
-    - apt-daily
-  block:
-  - name: Disable apt-daily service on boot
-    become: yes
-    blockinfile:
-      block: |
-        [Timer]
-        Persistent=false
-      path: /etc/systemd/system/apt-daily.timer.d/override.conf
-      create: yes
-    register: result_apt_daily
-
-  - name: Disable apt-daily-upgrade service on boot
-    become: yes
-    blockinfile:
-      block: |
-        [Timer]
-        Persistent=false
-      path: /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
-      create: yes
-    register: result_apt_daily_upgrade
-
-  - name: Reload systemctl
-    when: result_apt_daily is changed or result_apt_daily_upgrade is changed
-    become: yes
-    systemd:
-      daemon_reload: yes
-
-
 - name: Disable motd-news.service
   tags:
     - motd-news
