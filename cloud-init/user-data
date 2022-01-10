@@ -1,0 +1,133 @@
+#cloud-config
+
+# This is the user-data configuration file for cloud-init. By default this sets
+# up an initial user called "ubuntu" with password "ubuntu", which must be
+# changed at first login. However, many additional actions can be initiated on
+# first boot from this file. The cloud-init documentation has more details:
+#
+# https://cloudinit.readthedocs.io/
+#
+# Some additional examples are provided in comments below the default
+# configuration.
+
+# [The modules that run in the 'init' stage]
+# migrator, ubuntu-init-switch, seed_random, bootcmd, write-files, growpart,
+# resizefs, set_hostname, update_hostname, update_etc_hosts, ca-certs,
+# rsyslog, users-groups, ssh
+
+# [The modules that run in the 'config' stage]
+# disk_setup, mounts, ssh-import-id, locale, set-passwords, snappy, grub-dpkg,
+# apt-pipelining, apt-configure, package-update-upgrade-install, fan,
+# landscape, timezone, lxd, puppet, chef, salt-minion, mcollective,
+# disable-ec2-metadata, runcmd, byobu
+
+# [The modules that run in the 'final' stage]
+# rightscale_userdata, scripts-vendor, scripts-per-once, scripts-per-boot,
+# scripts-per-instance, scripts-user, ssh-authkey-fingerprints,
+# keys-to-console, phone-home, final-message, power-state-change
+
+
+## Write arbitrary files to the file-system (including binaries!)
+write_files:
+
+  - path: /etc/default/keyboard
+    content: |
+      # KEYBOARD configuration file
+      # Consult the keyboard(5) manual page.
+
+      XKBMODEL="pc105"
+      XKBLAYOUT="jp"
+      XKBVARIANT=""
+      XKBOPTIONS="ctrl:nocaps"
+
+      BACKSPACE="guess"
+
+  - path: /etc/cloud/cloud-init.disabled # make sure to suppress cloud-init on next boot time
+
+  - path: /etc/sudoers.d/default_options
+    content: |
+      Defaults env_keep += "PATH"
+      Defaults !lecture
+      Defaults !secure_path
+      Defaults !authenticate
+      Defaults !requiretty
+
+  - path: /etc/systemd/system/apt-daily.timer.d/override.conf
+    permissions: "0755"
+    content: |
+      [Timer]
+      Persistent=false
+
+  - path: /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+    permissions: "0755"
+    content: |
+      [Timer]
+      Persistent=false
+
+  - path: /etc/cron.d/led_pattern
+    content: |
+      #Ansible: led_pattern
+      @reboot root echo 0 > /sys/class/leds/led1/brightness; echo none > /sys/class/leds/led1/trigger
+
+# echo timer > /sys/class/leds/led1/trigger; echo 500 > /sys/class/leds/led1/delay_on; echo 3500 > /sys/class/leds/led1/delay_off
+
+hostname: raspberrypi
+
+
+## Add users and groups to the system, and import keys with the ssh-import-id utility
+users:
+  - default
+  - name: me
+    groups: [sudo]
+    lock_passwd: false
+    shell: /usr/bin/bash
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII6nOG/V0+kUxH4fYIFvo43MOI9h1B6n7NagURVfsQ7v termius
+      - ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEArSXwg3dTt9IuUATWFm0zmtqMXu9J1mmI/a/ffPrm5mRXNCVEhHPoCQi4W6AhhhRMZYrp9MdVya25tlQK2A5DAkXmS3IiFGeTv89FGZmOyBjFggHDrb5OB+HLy3Pwz5HLvMr4543eFbRLCZaxbuz3wdLGkt4od/eZPiW7JPRWMIfabu/zeWRN5naSrsJNDMDC1wlAQPrSBUhFIskkzbfGk4x1EtfKwBIq7SBcTg/QTOz4mS5BWm3lI4L43q97VBDM2iLnuSopPO70fuBry+H/rIVjwBkzwzslGALabeaNi9sWZhvHTffLsp00vzHKF5f8jPIL2pdCV733BI4K5wZ5xw== WinSCP
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC41DkKnSa5qalG4S1rxjbKf/lEVRqNExeD3yJ418CNUmv9TDQduBkUPr8IrQN/zo/l44JvF1syT0C0Q0CwEa0zaFKWpMuCwddG9kEEBsIbqfADuk7LAYdAhKEXbmgRjzD6C1Z0X67y7mz4MjS6ficDVWaMGL1zvFOCefsd2mAEfXSzcfFRsSPKcZkwRJ1gxMy5z3iNpiX9TH6N/GMKbAqYFgs8xK4SNgSIBKuCotNjLzO91902Zh1GI96u4/drsW1n+ELvrNLCDcTJby6UORSY7Lo8NJWOCdWQnHPMvHyIEgOH1sMy2UOzW7AS4e54wioWSWlaJtWG8EtOfdu1krXaw64RgH4ZXY67e1PvEd295eP4gM8RH9snRtg7vC2ZTxKt98S3YLqGovDfxYNoSC0DyUrrwRavc/cTBXNNg2hmsp/sqmETiy4soF9pX1AnvGFCR8KoaI6aWSx+8mjQ7dZkIHvt/026IC+X5kQWjzlG9YgLam7f7NnkwdVdOntrwFXnkt6IZPPsK5mpVhMV2y9zb3wCITOxMUiUGZdnBcXXR8btW2R4NUI4JWJ4QwSV4lOWJokP8gGukr+giwKeOJLc2KrveU1Iv+qFsh48gP8Acl221KmSLsQr98NqL9uDr/W9kfm2rR9LQHUXDFMj6zPBFaii3n6GTvHn1UDceFcevw== me(Windows)@AdAstra
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDNpsq/axSnxp/VLA54Ond2PDxzflrdhDRkHL/Y/uQf/+W82BJV37+q8BBvm2lp2Wo0M/JhH8/1BvpT2BLxtAjcSYOKXLEznkZw60BtJY0ID8ne0j5OuhsLj1jL3Y6B+EGWvkhoLk8+/KQwF+WqknaoiSI4pMdq+jBEHBUyF2B6uweWKHyPcYrZq9zgZJ5piEaEa5k6FadyV4ijfhgZ0Xs2gBPZdZ3/zXL0gnMvR+K4+NmK272CoRK75KCF2+4JYiwAYnYcyDsN1r8VALb0vYFt6lJWynnlg/dHFIqIxo43cRiALrfLRYsGt6ydjbfOBNuq69JRLS4TmKPBzM59mZLDfCDGZUo7OkBlOhf/8aWPUc8G1+Nr0VJfW8EpAaX4hBVMrme5SQcPBiFnHWBokFOxMeeW8XlLb8cKMrvXogfOTd9r5Bcj3Eo/0nLBZD1Y39W/C7x5iQvKhtzJDd+D8SNIDhcQTl4HgxY4fj/7Yp4JH+slUFMPcFUScWrbiLmsq2wM3dOAMpT8SnHAUzO7C20FAI2KKATEb9XA/oa6H12RQ3dSbb6GjqWrAP1B4vaDMPn+M7eX/8y1hptoxvPVwmQo6HaCSzylOTEPMctHVEJJS+MQ5baTMPPamtnelldxQ0GzeDIoqyOR9d5i0j2iUBqQMFaFi40s3OG0e5syzg0rvw== me(WSL)@AdAstra
+
+
+chpasswd:
+  expire: false
+  list:
+    - "me:@[@[@[@["
+    - "root:@[@[@[@["
+
+
+# ssh
+ssh_pwauth: true # Enable password authentication with the SSH daemon
+disable_root: true # By default, root login is disabled
+
+
+locale: ja_JP.UTF-8
+
+
+# apt:
+#   # preserve_sources_list: true
+#   primary:
+#     - arches: [default]
+#       uri: http://ports.ubuntu.com/ubuntu-ports
+
+
+timezone: Asia/Tokyo
+
+
+# Run arbitrary commands at rc.local like time
+runcmd:
+  - [ netplan, apply ] # apply netplan config defined on 'network-config'
+  - [ dpkg-reconfigure, -f, noninteractive, keyboard-configuration ] # apply keyboard configration
+  - [ dpkg-reconfigure, -f, noninteractive, locales ] # update timezone
+  - [ update-locale, LANG=ja_JP.UTF-8 ] # update locale
+  - [ userdel, -r, ubuntu ]
+  - bash -c '/boot/firmware/LINE_NOTIFY.sh' && rm -f '/boot/firmware/LINE_NOTIFY.sh'
+
+
+# enable byobu both system wide and for default user
+byobu_by_default: enable
+
+
+# reboot 1 minute later
+# power_state:
+#     mode: reboot
+#     delay: '+1'

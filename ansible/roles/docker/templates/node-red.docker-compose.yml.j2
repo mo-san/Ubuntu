@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  node-red:
+    container_name: nodered
+    image: nodered/node-red
+    environment:
+      - TZ=Asia/Tokyo
+    ports:
+      - "{{ nodered_web_port }}:1880"
+    volumes:
+      - ./node-red-data:/data
+    restart: always

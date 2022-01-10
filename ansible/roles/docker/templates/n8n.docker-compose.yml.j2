@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  n8n:
+    image: n8nio/n8n:latest-rpi
+    restart: always
+    ports:
+      - "{{ n8n_web_port }}:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER
+      - N8N_BASIC_AUTH_PASSWORD
+      - N8N_PORT=5678
+      # - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
+      # - N8N_PROTOCOL=https
+      # - NODE_ENV=production
+      # - WEBHOOK_TUNNEL_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+    volumes:
+      - ./.n8n:/home/node/.n8n
+      - ./n8n-files:/files

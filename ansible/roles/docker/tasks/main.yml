@@ -1,0 +1,291 @@
+- name: Docker をインストール
+  become: true
+  tags:
+    - docker-main
+  block:
+  - name: Docker 前提パッケージをインストール
+    apt:
+      name:
+        - apt-transport-https
+        - gnupg-agent
+
+  - name: Docker GPG key を追加
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+
+  - name: Get Ubuntu codename
+    shell: lsb_release -cs
+    register: _codename
+    changed_when: false
+    check_mode: no
+
+  - name: Get architecture
+    shell: arch
+    register: _arch
+    changed_when: false
+    check_mode: no
+
+  - name: Set variables
+    set_fact:
+      codename: "{{ _codename.stdout }}"
+      arch: "{{ _arch.stdout }}"
+
+  - name: Dockerリポジトリを追加
+    template:
+      src: docker.sources.list.j2
+      dest: /etc/apt/sources.list.d/docker.sources.list
+    vars:
+      - codename: "{{ codename }}"
+    register: result
+
+  - name: Run "apt-get update"
+    when: result is changed
+    apt:
+      update_cache: yes
+
+  - name: Docker 本体インストール
+    apt:
+      name:
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+
+  - name: ユーザーを docker グループに入れる
+    user:
+      name: "{{ ansible_user }}"
+      groups: docker
+      append: yes
+
+  - name: Docker サービスを開始する
+    service:
+      name: docker
+      state: started
+      enabled: yes
+
+
+- name: docker-compose インストール
+  tags:
+    - docker-compose
+  become: true
+  block:
+  - name: docker-compose | 前提パッケージをインストール
+    apt:
+      name:
+        - libffi-dev
+
+  - name: docker-compose | 本体インストール
+    pip:
+      name:
+        - docker-compose
+
+
+- name: Dockerの多すぎるsyslog出力を抑制する
+  tags:
+    - docker-syslog
+  become: true
+  block:
+  - name: Create conf file in /etc/rsyslog.d/
+    copy:
+      content: 'if $msg contains "run-docker-runtime" and $msg contains ".mount: Succeeded." then { stop }'
+      dest: /etc/rsyslog.d/01-blocklist.conf
+    register: result
+
+  - name: Restart rsyslog
+    when: result is changed
+    service:
+      name: rsyslog
+      state: restarted
+
+
+- name: Dockerの保存先を変える
+  tags:
+    - docker-usb
+  become: true
+  block:
+  - name: Dockerの保存先を変える
+    copy:
+      content: |
+        {
+          "data-root": "{{ docker_root }}"
+        }
+      dest: /etc/docker/daemon.json
+    register: result
+
+  - name: Restart docker
+    when: result is changed
+    service:
+      name: docker
+      state: restarted
+
+
+- name: Install Portainer
+  become: true
+  tags:
+    - docker-portainer
+  vars:
+    - app_dir: "{{ docker_base_dir }}/portainer"
+  block:
+  - name: Portainer | Create directories used as docker volumes
+    file:
+      path: "{{ app_dir }}"
+      state: directory
+      group: "{{ ansible_user }}"
+      owner: "{{ ansible_user }}"
+
+  - name: Portainer | Deploy docker-compose file
+    template:
+      src: portainer.docker-compose.yml.j2
+      dest: "{{ app_dir }}/docker-compose.yml"
+      group: "{{ ansible_user }}"
+      owner: "{{ ansible_user }}"
+    vars:
+      - container_name: nodered
+
+  - name: ★Portainer  を起動するコマンド
+    debug:
+      msg: "docker-compose -f {{ app_dir }}/docker-compose.yml up -d"
+
+
+- name: Install node-RED
+  become: true
+  tags:
+    - docker-node-red
+  vars:
+    - app_dir: "{{ docker_base_dir }}/node-red"
+  block:
+  - name: node-RED | Create directories used as docker volumes
+    file:
+      path: "{{ app_dir }}"
+      state: directory
+      group: "{{ ansible_user }}"
+      owner: "{{ ansible_user }}"
+
+  - name: node-RED | Deploy docker-compose file
+    template:
+      src: node-red.docker-compose.yml.j2
+      dest: "{{ app_dir }}/docker-compose.yml"
+      group: "{{ ansible_user }}"
+      owner: "{{ ansible_user }}"
+    vars:
+      - container_name: nodered
+
+  - name: ★ node-RED を起動するコマンド
+    debug:
+      msg: "docker-compose -f {{ app_dir }}/docker-compose.yml up -d"
+
+
+- name: Install n8n
+  become: true
+  tags:
+    - docker-n8n
+  vars:
+    - app_dir: "{{ docker_base_dir }}/n8n"
+  block:
+  - name: n8n | Create directories used as docker volumes
+    file:
+      path: "{{ app_dir }}"
+      state: directory
+      group: "{{ ansible_user }}"
+      owner: "{{ ansible_user }}"
+
+  - name: n8n | Deploy docker-compose file
+    template:
+      src: n8n.docker-compose.yml.j2
+      dest: "{{ app_dir }}/docker-compose.yml"
+      group: "{{ ansible_user }}"
+      owner: "{{ ansible_user }}"
+    vars:
+      - container_name: nodered
+
+  - name: n8n | Deploy .env file for docker
+    template:
+      src: n8n.env.j2
+      dest: "{{ app_dir }}/.env"
+      group: "{{ ansible_user }}"
+      owner: "{{ ansible_user }}"
+
+  - name: ★ n8n を起動するコマンド
+    debug:
+      msg: "docker-compose -f {{ app_dir }}/docker-compose.yml up -d"
+
+
+
+- name: note
+  debug:
+    msg: ★ docker コマンドを使うには再ログインしてね
+
+
+# region: pihole
+# - name: Install pi-hole
+#   become: true
+#   tags:
+#     - docker-pi-hole
+#   vars:
+#     - app_dir: "{{ docker_base_dir }}/pihole"
+#   block:
+#   - name: pi-hole | edit /etc/systemd/resolved.conf
+#     lineinfile:
+#       path: /etc/systemd/resolved.conf
+#       regexp: "#? *DNSStubListener=yes"
+#       line: "DNSStubListener=no"
+#       backup: yes
+#     register: result
+
+#   - when: result is changed
+#     block:
+#     - name: pi-hole | Remove /etc/resolv.conf
+#       file:
+#         path: /etc/resolv.conf
+#         state: absent
+
+#     - name: pi-hole | Create a symbolic link from /etc/resolv.conf to /run/systemd/resolve/resolv.conf
+#       file:
+#         src: /run/systemd/resolve/resolv.conf
+#         name: /etc/resolv.conf
+#         state: link
+
+#     - name: pi-hole | systemd-resolved サービスを再起動する
+#       service:
+#         name: systemd-resolved
+#         state: restarted
+
+#   - name: pi-hole | Create directories used as docker volumes
+#     file:
+#       path: "{{ app_dir }}/{{ item }}"
+#       state: directory
+#       group: "{{ ansible_user }}"
+#       owner: "{{ ansible_user }}"
+#     loop:
+#       - etc-pihole
+#       - etc-dnsmasq.d
+#       - var-log
+
+#   - name: Check if pi-hole log file exists
+#     stat:
+#       path: "{{ app_dir }}/var-log/pihole.log"
+#     register: pi_log_stat
+
+#   - name: pi-hole | Create pi-hole log file
+#     when: not pi_log_stat.stat.exists
+#     file:
+#       path: "{{ app_dir }}/var-log/pihole.log"
+#       state: touch
+#       group: "{{ ansible_user }}"
+#       owner: "{{ ansible_user }}"
+
+#   - name: pi-hole | Deploy docker-compose file
+#     template:
+#       src: pi-hole.docker-compose.yml.j2
+#       dest: "{{ app_dir }}/docker-compose.yml"
+#       group: "{{ ansible_user }}"
+#       owner: "{{ ansible_user }}"
+#     vars:
+#       - host_ip: "192.168.0.81"
+#       - container_name: pihole
+#       # IPアドレスを表示するコマンド
+#       # ip -4 -brief addr show eth0 | command grep -oP "\d+(\.\d+){3}"
+
+#   - name: ★ pi-holeを起動するコマンド
+#     debug:
+#       msg: "docker-compose -f {{ app_dir }}/docker-compose.yml up -d"
+# endregion

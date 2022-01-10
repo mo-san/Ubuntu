@@ -1,0 +1,33 @@
+# - name: Test connection
+#   hosts:
+#     - raspberrypi
+#   tags:
+#     - always
+#   gather_facts: no
+#   tasks:
+#     - import_tasks: _sshd_port_juggling.yml
+
+- name: Raspberry Pi セットアップ
+  hosts:
+    - raspberrypi
+    # - localhost
+  tags:
+    - pisetup
+  gather_facts: no
+  roles:
+    - raspberrypi
+  vars_files:
+    - variables.yml
+
+
+- name: Docker をインストール
+  hosts:
+    - raspberrypi
+    # - localhost
+  tags:
+    - docker
+  gather_facts: no
+  roles:
+    - docker
+  vars_files:
+    - variables.yml

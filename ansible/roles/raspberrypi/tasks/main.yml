@@ -1,0 +1,619 @@
+- name: Set a hostname
+  become: yes
+  block:
+  - name: Set system hostname
+    hostname:
+      name: raspberrypi
+
+  - name: Write hostname in /etc/hosts
+    lineinfile:
+      line: 127.0.0.1 raspberrypi
+      path: /etc/hosts
+      insertafter: "127.0.0.1 localhost"
+
+
+- name: apt-get
+  tags:
+    - apt-get
+  become: yes
+  block:
+  - name: Set apt sources
+    template:
+      src: sources.list.j2
+      dest: /etc/apt/sources.list
+      backup: yes
+
+  - name: Run "apt-get update"
+    apt:
+      update_cache: yes
+      # if the last update occurred more than 86400 seconds (= 1 day) ago
+      cache_valid_time: 86400
+
+  - name: Install Japanese languauge packages
+    apt:
+      name:
+      - language-pack-ja
+      - manpages-ja
+      - manpages-ja-dev
+
+  - name: Install python packages
+    apt:
+      name:
+      - python-setuptools
+      - python3-pip
+
+  - name: Install utility packages 1
+    apt:
+      name:
+      - avahi-daemon
+      - dnsutils
+      - jq
+      - locate
+      - tree
+      - unar
+      - unzip
+
+  - name: Install utility packages 2
+    apt:
+      name:
+      - cifs-utils # samba 経由でマウントする
+      - fd-find # 高速な find
+      - highlight # fzf のプレビューに色を付けるのに必要
+      - libraspberrypi-bin # vcgencmd, raspistill などを使えるようにする
+      - ne # nice editor
+      - ncdu # ディスク占有率を視覚的に表示する
+      - source-highlight # lessに色を付けるのに必要
+      - xsel # コピーに必要
+
+  - name: Remove dependencies that are no longer required
+    apt:
+      autoremove: yes
+
+
+- name: pip install
+  tags:
+    - pip
+  become: yes
+  block:
+  - name: upgrade pip
+    pip:
+      name: pip
+      state: latest
+
+  - name: Install python packages
+    pip:
+      name:
+        - ranger-fm
+        - trash-cli
+        - yq
+
+
+# - name: Mount usb drive
+#   tags:
+#     - fstab
+#   block:
+#   - name: Create directory for mount
+#     become: yes
+#     file:
+#       state: directory
+#       path: "{{ usbdrive_path }}"
+#       mode: "0777"
+
+#   - name: Mount usb drive
+#     become: yes
+#     ansible.posix.mount:
+#       path: "{{ usbdrive_path }}"
+#       src: "UUID={{ usbdrive_uuid }}"
+#       fstype: ext4
+#       opts: defaults,noatime,nofail,x-systemd.device-timeout=1
+#       state: present
+
+
+- name: Led pattern
+  tags:
+    - led
+  block:
+  - name: Set LED lighting pattern on cron
+    become: yes
+    cron:
+      name: led_pattern
+      cron_file: led_pattern
+      special_time: reboot
+      user: root
+      job: "echo 0 > /sys/class/leds/led1/brightness; echo none > /sys/class/leds/led1/trigger"
+      # job: "echo timer > /sys/class/leds/led1/trigger; echo {{ led_duration_on }} > /sys/class/leds/led1/delay_on; echo {{ led_duration_off }} > /sys/class/leds/led1/delay_off"
+
+  - name: Set led lighting mode to none
+    become: yes
+    shell: |
+      echo 0 > /sys/class/leds/led1/brightness
+      echo none > /sys/class/leds/led1/trigger
+    # shell: |
+    #   echo timer > /sys/class/leds/led1/trigger
+    #   echo {{ led_duration_on }} > /sys/class/leds/led1/delay_on
+    #   echo {{ led_duration_off }} > /sys/class/leds/led1/delay_off
+
+
+- name: Edit sshd_config
+  tags:
+    - sshd
+  become: yes
+  block:
+  - name: Deploy /etc/ssh/sshd_config
+    template:
+      src: sshd_config.j2
+      dest: /etc/ssh/sshd_config
+      mode: "0644"
+      backup: yes
+      validate: /usr/sbin/sshd -t -f %s
+    register: result
+
+  - name: Reload sshd
+    when: result is changed
+    service:
+      name: sshd
+      state: reloaded
+
+
+- name: Configure ~/.ssh/config
+  tags:
+    - ssh_config
+  block:
+  - name: Get machine kernel name
+    shell: uname -r
+    register: result
+    changed_when: no
+    check_mode: no
+
+  - name: Check if this machine is Rasberry Pi
+    set_fact:
+      IsRaspi: "{{ 'raspi' in result.stdout|lower }}"
+
+  - name: Deploy /etc/ssh/config
+    template:
+      src: ssh_config.j2
+      dest: ~/.ssh/config
+      backup: yes
+
+  - name: Transfer SSH keys
+    copy:
+      src: "{{ item }}"
+      dest: ~/.ssh/
+    with_fileglob:
+      - "~/.ssh/id_rsa*"
+
+  - name: chmod 600 ~/.ssh/id_rsa
+    file:
+      mode: "0600"
+      path: ~/.ssh/id_rsa
+
+  - name: Set authorized keys
+    ansible.posix.authorized_key:
+      user: "{{ ansible_user }}"
+      key: "{{ lookup('file', home_contents_dir_in_host + '/.ssh/authorized_keys') }}"
+
+
+- name: apt-daily service
+  tags:
+    - apt-daily
+  block:
+  - name: Disable apt-daily service on boot
+    become: yes
+    blockinfile:
+      block: |
+        [Timer]
+        Persistent=false
+      path: /etc/systemd/system/apt-daily.timer.d/override.conf
+      create: yes
+    register: result_apt_daily
+
+  - name: Disable apt-daily-upgrade service on boot
+    become: yes
+    blockinfile:
+      block: |
+        [Timer]
+        Persistent=false
+      path: /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+      create: yes
+    register: result_apt_daily_upgrade
+
+  - name: Reload systemctl
+    when: result_apt_daily is changed or result_apt_daily_upgrade is changed
+    become: yes
+    systemd:
+      daemon_reload: yes
+
+
+- name: Disable motd-news.service
+  tags:
+    - motd-news
+  become: yes
+  service:
+    name: "{{ item }}"
+    enabled: no
+    state: stopped
+  loop:
+    - motd-news
+    - motd-news.timer
+
+
+- name: ufw
+  tags:
+    - ufw
+  block:
+  - name: check if ufw is configured
+    become: yes
+    shell: |
+      open_ports=$(ufw status | grep -P "^\d+ +ALLOW" | cut -d " " -f 1)
+      ports=(22 53 80 443 {{ sshd_port }} {{ pihole_web_port }})
+      for port in ${ports[@]}; do
+        if ! echo "$open_ports" | grep --quiet "^${port}$"; then
+          echo "$port is not open" >&2
+        fi
+      done
+    ignore_errors: yes
+    register: result
+    changed_when: no
+    check_mode: no
+
+  - when: result is failed
+    block:
+    - name: Configure ufw
+      become: yes
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        comment: "{{ item.comment }}"
+      loop:
+        - { port: "9", comment: "Wake On Lan" }
+        - { port: "22", comment: "SSH" }
+        - { port: "80", comment: "HTTP" }
+        - { port: "443", comment: "HTTPS" }
+        - { port: "53", comment: "DNS for Pi-hole" }
+        - { port: "{{ sshd_port }}", comment: "SSH another" }
+        - { port: "{{ pihole_web_port }}", comment: "Pi-hole" }
+
+    - name: Enable ufw
+      become: yes
+      community.general.ufw:
+        default: deny
+        state: enabled
+
+
+- name: On home directory
+  tags:
+    - home
+  block:
+  - name: Transfer ~/.config directory
+    copy:
+      src: "{{ home_contents_dir_in_host }}/.config"
+      dest: ~/
+
+  - name: Create ~/bin directory if not exists
+    file:
+      state: directory
+      path: "{{ home_bin_path }}"
+
+  - name: Check if ~/.hushlogin exists
+    stat:
+      path: ~/.hushlogin
+    register: result
+
+  - name: touch ~/.hushlogin
+    when: not result.stat.exists
+    file:
+      state: touch
+      path: ~/.hushlogin
+
+  - name: stop beep sound
+    blockinfile:
+      block: |
+        # stop beep sound
+        set bell-style none
+      path: ~/.inputrc
+      create: yes
+      insertafter: EOF
+
+- name: byobu
+  tags:
+    - byobu
+  block:
+  - name: Create ~/.byobu directory if not exists
+    file:
+      state: directory
+      path: ~/.byobu
+
+  - name: Set mouse mode enabled on byobu
+    lineinfile:
+      line: set -g mouse on
+      path: ~/.byobu/profile.tmux
+      create: yes
+
+  - name: .byobu/datetime.tmux
+    lineinfile:
+      line: BYOBU_DATE="%m/%d "
+      path: ~/.byobu/datetime.tmux
+      regexp: ^BYOBU_DATE=
+      create: yes
+
+  - name: .byobu/status
+    lineinfile:
+      line: "tmux_right=\" network #disk_io #custom #entropy #raid reboot_required updates_available #apport #services #mail #users #uptime #fan_speed cpu_temp #battery wifi_quality #processes #load_average #cpu_count cpu_freq memory #swap disk #whoami hostname #ip_address #time_utc date time\""
+      path: ~/.byobu/status
+      regexp: ^tmux_right=
+      create: yes
+
+  - name: .byobu/statusrc
+    lineinfile:
+      line: NETWORK_UNITS=bytes
+      path: ~/.byobu/statusrc
+      regexp: ^# *NETWORK_UNITS=bytes
+      create: yes
+
+  - name: Make sure byobu launches at user login
+    lineinfile:
+      line: _byobu_sourced=1 . /usr/bin/byobu-launch 2>/dev/null || true
+      path: ~/.zprofile
+      create: yes
+
+
+- name: nano
+  tags:
+    - nano
+  block:
+  - name: Create nano's backup directory if not exists
+    file:
+      state: directory
+      path: "{{ nanobackup_path }}"
+
+  - name: Transfer .nanorc
+    template:
+      src: nanorc.j2
+      dest: "{{ home_path }}/.nanorc"
+      backup: yes
+
+  - name: Check if backup of /etc/nanorc exists
+    stat:
+      path: /etc/nanorc.orig
+    register: result
+
+  - name: backup original nanorc
+    when: not result.stat.exists
+    become: yes
+    shell: |
+      mv /etc/nanorc {{ home_path }}/nanorc.orig
+
+  - name: Hardlink .nanorc
+    file:
+      state: hard
+      path: /etc/nanorc
+      src: "{{ home_path }}/.nanorc"
+
+
+- name: zsh
+  tags:
+    - zsh
+  block:
+  - name: Check if ~/.zshrc exists
+    stat:
+      path: ~/.zshrc
+    register: result
+
+  - name: Transfer ~/.zshrc if not exists
+    when: not result.stat.exists
+    copy:
+      src: "{{ home_contents_dir_in_host }}/.zshrc"
+      dest: ~/.zshrc
+
+  - name: Install zsh
+    become: yes
+    apt:
+      name:
+        - zsh
+        - zsh-syntax-highlighting
+
+  - name: which zsh
+    shell: which zsh
+    register: result
+    changed_when: no
+    check_mode: no
+
+  - name: Change login shell to zsh
+    become: yes
+    user:
+      name: "{{ ansible_user }}"
+      shell: "{{ result.stdout }}"
+
+
+- name: Dynamic DNS scripts
+  tags:
+    - ddns
+  become: yes
+  cron:
+    name: notify_mydns
+    cron_file: notify_mydns
+    minute: "*/30"
+    user: "{{ ansible_user }}"
+    job: "logger -t DynamicDNS グローバルIPアドレスは $(curl --silent https://ipv4.mydns.jp/login.html -u mydns794954:SuHZUXuo5cM | grep 'REMOTE ADDRESS' | grep -oP '\\d+(\\.\\d+){3}')"
+
+
+- name: wakeonlan scripts
+  tags:
+    - wakeonlan
+  block:
+  - name: Install apt packages for wakeonlan
+    become: yes
+    apt:
+      name:
+        - wakeonlan
+
+  - name: echo "wakeonlan 20:25:64:0E:FE:20" > ~/bin/wol_Pavilion.sh
+    copy:
+      content: wakeonlan 20:25:64:0E:FE:20
+      dest: "{{ home_bin_path }}/wol_Pavilion.sh"
+      mode: "+x"
+
+  - name: echo "wakeonlan A8:A1:59:29:1D:82" > ~/bin/wol_AdAstra.sh
+    copy:
+      content: wakeonlan A8:A1:59:29:1D:82
+      dest: "{{ home_bin_path }}/wol_AdAstra.sh"
+      mode: "+x"
+
+
+  # junegunn/fzf: A command-line fuzzy finder
+  # https://github.com/junegunn/fzf
+- name: Install fzf
+  tags:
+    - fzf
+    - github
+  vars:
+    get_version:
+      cmd: fzf --version
+      regex: "^[\\d.]+"
+    github:
+      repo: junegunn/fzf
+      arch2name:
+        armv7l: linux_armv7.tar.gz
+        aarch64: linux_arm64.tar.gz
+  block:
+  - name: Install fzf
+    include_tasks: GetUrlFromGithub.yml
+
+  - name: Download and Install
+    when: binary_url is defined
+    shell: |
+      git clone --depth 1 --quiet https://github.com/junegunn/fzf.git ~/.fzf
+      ~/.fzf/install --all
+
+  - name: Make sure fzf loaded in bashrc
+    lineinfile:
+      line: "[ -f ~/.fzf.bash ] && source ~/.fzf.bash"
+      path: ~/.bashrc
+
+
+  # sharkdp/bat: A cat(1) clone with wings.
+  # https://github.com/sharkdp/bat
+- name: Install bat
+  tags:
+    - bat
+    - github
+  vars:
+    get_version:
+      cmd: bat --version
+      regex: "^[\\d.]+"
+    github:
+      repo: sharkdp/bat
+      arch2name:
+        armv7l: armhf.deb
+        aarch64: arm64.deb
+  block:
+  - name: Install bat
+    include_tasks: GetUrlFromGithub.yml
+
+  - name: Download and Install the .deb package
+    when: binary_url is defined
+    become: yes
+    apt:
+      deb: "{{ binary_url }}"
+
+
+  # zyedidia/micro: A modern and intuitive terminal-based text editor
+  # https://github.com/zyedidia/micro
+- name: Install micro
+  tags:
+    - micro
+    - github
+  vars:
+    get_version:
+      cmd: micro --version
+      regex: "(?<=Version. )[\\d.]+"
+    github:
+      repo: zyedidia/micro
+      arch2name:
+        armv7l: arm.tar.gz
+        aarch64: arm64.tar.gz
+  block:
+  - name: Install micro
+    include_tasks: GetUrlFromGithub.yml
+
+  - name: Download the package
+    when: binary_url is defined
+    shell: |
+      wget -q -O - "{{ binary_url }}" | tar -xzf - "micro-{{ latest_version }}/micro"
+      mv "micro-{{ latest_version }}/micro" {{ home_path }}/micro
+      rm -rf "micro-{{ latest_version }}"
+
+  - name: Install the package
+    when: binary_url is defined
+    become: yes
+    shell: |
+      install {{ home_path }}/micro /usr/bin/micro
+      rm {{ home_path }}/micro
+
+
+- name: Install caddy
+  tags:
+    - caddy
+  block:
+  - name: caddy GPG key を追加
+    become: yes
+    apt_key:
+      url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+
+  - name: Add caddy repository
+    become: yes
+    apt_repository:
+      repo: deb https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
+      filename: caddy-stable.list
+      update_cache: yes
+
+  - name: Install caddy
+    become: yes
+    apt:
+      name:
+        - caddy
+    register: result
+
+  # - name: check if caddy has lego_deprecated module
+  #   shell: |
+  #     caddy list-modules | grep --quiet "dns.providers.lego_deprecated"
+  #   ignore_errors: yes
+  #   register: result
+
+  # - name: Replace caddy executable with "lego" added one
+  #   when: result is failed
+  #   become: yes
+  #   get_url:
+  #     url: "{{ caddy_lego_url }}"
+  #     dest: /usr/bin/caddy
+  #     backup: yes
+  #     mode: "0755"
+
+  # - name: check if caddy installation succeeded
+  #   shell: |
+  #     caddy list-modules | grep --quiet "dns.providers.lego_deprecated"
+  #   ignore_errors: yes
+  #   register: result
+
+  # - name: alert when download of caddy failed
+  #   when: result is failed
+  #   debug:
+  #     msg: "Download failed!! Try download manually: {{ caddy_lego_url }}"
+
+
+- name: Install go
+  tags:
+    - golang
+  block:
+  - name: Add go repository
+    become: yes
+    apt_repository:
+      repo: ppa:longsleep/golang-backports
+      update_cache: yes
+
+  - name: Install go
+    become: yes
+    apt:
+      name:
+        - golang-go
+
