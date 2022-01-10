@@ -1,0 +1,19 @@
+{
+    "autosu": true,
+    "clipboard": "terminal",
+    "colorscheme": "darcula",
+    "ignorecase": true,
+    "initlua": true,
+    "keymenu": true,
+    "mkparents": true,
+    "mouse": false,
+    "pluginchannels": [
+        "https://raw.githubusercontent.com/micro-editor/plugin-channel/master/channel.json"
+    ],
+    "pluginrepos": [],
+    "scrollbar": true,
+    "statusformatl": "$(filename) $(modified)($(line),$(col)) $(status.paste)| type:$(opt:filetype) | $(opt:fileformat) | $(opt:encoding)",
+    "tabmovement": true,
+    "tabstospaces": true,
+    "test": true
+}

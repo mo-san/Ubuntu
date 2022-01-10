@@ -1,0 +1,6 @@
+[Desktop Entry]
+Exec=conky -d --display=:0 --quiet -x 1920 -y 1080
+Name=Conky
+Type=Application
+Version=1.0
+X-LXQt-Need-Tray=true
