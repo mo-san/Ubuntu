@@ -574,32 +574,6 @@
         - caddy
     register: result
 
-  # - name: check if caddy has lego_deprecated module
-  #   shell: |
-  #     caddy list-modules | grep --quiet "dns.providers.lego_deprecated"
-  #   ignore_errors: yes
-  #   register: result
-
-  # - name: Replace caddy executable with "lego" added one
-  #   when: result is failed
-  #   become: yes
-  #   get_url:
-  #     url: "{{ caddy_lego_url }}"
-  #     dest: /usr/bin/caddy
-  #     backup: yes
-  #     mode: "0755"
-
-  # - name: check if caddy installation succeeded
-  #   shell: |
-  #     caddy list-modules | grep --quiet "dns.providers.lego_deprecated"
-  #   ignore_errors: yes
-  #   register: result
-
-  # - name: alert when download of caddy failed
-  #   when: result is failed
-  #   debug:
-  #     msg: "Download failed!! Try download manually: {{ caddy_lego_url }}"
-
 
 - name: Install go
   tags:
