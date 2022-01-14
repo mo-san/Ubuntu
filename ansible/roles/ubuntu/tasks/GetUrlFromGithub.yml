@@ -1,0 +1,46 @@
+- name: Get app's version
+  shell: "{{ get_version.cmd }} | grep -oP '{{ get_version.regex }}'"
+  register: _version
+  ignore_errors: yes
+  changed_when: no
+  check_mode: no
+
+- name: Get architecture
+  shell: arch
+  register: _arch
+  changed_when: no
+  check_mode: no
+
+- name: Get latest release
+  uri:
+    url: "https://api.github.com/repos/{{ github.repo }}/releases/latest"
+  register: latest_release
+  no_log: yes
+  check_mode: no
+
+- name: Set variables
+  set_fact:
+    latest_version: "{{ latest_release.json.tag_name | regex_replace('^v', '') }}"
+    app_version: "{{ (_version.rc|bool) | ternary('0.0.0', _version.stdout) }}"
+    arch: "{{ _arch.stdout }}"
+
+- name: Fetch latest one
+  when: latest_version is version(app_version, ">")
+  block:
+  - name: message
+    debug:
+      msg:
+        - "Latest version is {{ latest_version }}"
+        - "Installed version is {{ app_version }}"
+        - "arch is {{ arch }}"
+        - "search term is {{ github.arch2name[arch] }}"
+
+  - name: Pick the latest binary
+    set_fact:
+      binary_url: "{{ latest_release.json | to_json | from_json | json_query(my_query) | first }}"
+    vars:
+      my_query: "(assets[*].browser_download_url)[? ends_with(@, '{{ github.arch2name[arch] }}') ]"
+
+- name: File to download
+  debug:
+    msg: "{{ binary_url|default('No updates.') }}"

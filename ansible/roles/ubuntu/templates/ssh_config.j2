@@ -1,0 +1,19 @@
+StrictHostKeyChecking no
+ServerAliveInterval 60
+UserKnownHostsFile /dev/null
+LogLevel QUIET
+{% if not IsRaspi %}
+
+Host RaspberryPi
+    Hostname raspberrypi.local
+    Port 3939
+    User me
+    IdentityFile ~/.ssh/id_rsa
+
+Host RaspberryPi2
+    Hostname raspberrypi-2.local
+    Port 3939
+    User me
+    IdentityFile ~/.ssh/id_rsa
+
+{% endif %}

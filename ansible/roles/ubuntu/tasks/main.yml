@@ -1,0 +1,626 @@
+- name: without password
+  tags:
+    - sudoers
+  block:
+  - name: sudoers
+    become: yes
+    blockinfile:
+      block: |
+        Defaults env_keep += "PATH"
+        Defaults !lecture
+        Defaults !secure_path
+        Defaults !authenticate
+        Defaults !requiretty
+      path: /etc/sudoers.d/default_options
+      create: yes
+
+
+ - name: change root password
+   become: yes
+   tags:
+     - password
+   user:
+     name: root
+     password: "$6$dododo$JzubjNW20/YOtqiNK9Qih2nWVQ9g1GvUkRbwiTyQYMqeIsS7svEt.aK.wvFQuad4mZDRl2kJF5T1FyeEqR.2V/"
+
+
+- name: keyboard settings
+  tags:
+    - keyboard
+  become: yes
+  - name: XKBOPTIONS
+    lineinfile:
+      path: /etc/default/keyboard
+      regexp: '^\s*XKBOPTIONS\s*='
+      line: XKBOPTIONS="ctrl:nocaps"
+      create: yes
+
+  - name: kernel.sysrq
+    lineinfile:
+      path: /etc/sysctl.d/10-magic-sysrq.conf
+      line: kernel.sysrq = 1
+      regexp: '^\s*kernel.sysrq\s*='
+      create: yes
+
+
+- name: apt-get
+  tags:
+    - apt-get
+  become: yes
+  block:
+  - name: Set apt sources
+    template:
+      src: sources.list.j2
+      dest: /etc/apt/sources.list
+      backup: yes
+
+  - name: Run "apt-get update"
+    apt:
+      update_cache: yes
+      # if the last update occurred more than 86400 seconds (= 1 day) ago
+      cache_valid_time: 86400
+
+  - name: Install Japanese languauge packages
+    apt:
+      name:
+      - language-pack-ja
+      - manpages-ja
+      - manpages-ja-dev
+
+  - name: Install pip for python
+    apt:
+      name:
+      - python-setuptools
+      - python3-pip
+
+# wget http://bootstrap.pypa.io/get-pip.py -O ~/get-pip.py
+# sudo python3 ~/get-pip.py
+# rm ~/get-pip.py
+
+  - name: Install utility packages
+    apt:
+      name:
+      - avahi-daemon
+      - byobu
+      - cifs-utils # samba 経由でマウントする
+      - curl
+      - dnsutils
+      - fcitx-mozc
+      - fd-find # 高速な find
+      - gdebi-core
+      - git
+      - highlight # fzf のプレビューに色を付けるのに必要
+      - jq
+      - locate
+      - ncdu # ディスク占有率を視覚的に表示する
+      - openssh-server
+      - source-highlight # lessに色を付けるのに必要
+      - tree
+      - unar
+      - unzip
+      - xsel # コピーに必要
+      - zsh
+      - zsh-syntax-highlighting
+
+
+  - name: Install CLI apps
+    apt:
+      name:
+      - htop
+      - xbindkeys
+      - xclip
+
+  - name: Install GUI apps
+    apt:
+      name:
+      - autokey-gtk
+      - clipit
+      - conky-all
+      - easystroke
+      - grub-customizer
+      - guake
+      - simplescreenrecorder
+      - vlc
+
+  - name: Remove dependencies that are no longer required
+    apt:
+      autoremove: yes
+
+
+- name: pip install
+  tags:
+    - pip
+  become: yes
+  block:
+  - name: upgrade pip
+    pip:
+      name: pip
+      state: latest
+
+  - name: Install python packages
+    pip:
+      name:
+        - ranger-fm
+        - trash-cli
+        - yq
+
+
+ - name: Mount SMB
+   tags:
+     - fstab
+   loop:
+     - c
+     - d
+     - "{{ username_win }}"
+   block:
+   - name: Create directory for mount
+     become: yes
+     file:
+       state: directory
+       path: "{{ item }}"
+       mode: "0777"
+
+   - name: Mount Windows SMB
+     become: yes
+     ansible.posix.mount:
+       path: "/mnt/{{ item }}"
+       src: "//{{ host_ip }}/{{ item }}"
+       fstype: cifs
+       opts: "credentials={{ credentials_path }},file_mode=0777,dir_mode=0777,users,rw,noauto,x-systemd.automount,_netdev"
+       state: present
+       boot: no
+
+
+- name: Edit sshd_config
+  tags:
+    - sshd
+  become: yes
+  block:
+  - name: Deploy /etc/ssh/sshd_config
+    template:
+      src: sshd_config.j2
+      dest: /etc/ssh/sshd_config
+      mode: "0644"
+      backup: yes
+      validate: /usr/sbin/sshd -t -f %s
+    register: result
+
+  - name: Reload sshd
+    when: result is changed
+    service:
+      name: sshd
+      state: reloaded
+
+
+- name: Configure ~/.ssh/config
+  tags:
+    - ssh_config
+  block:
+  - name: Get machine kernel name
+    shell: uname -r
+    register: result
+    changed_when: no
+    check_mode: no
+
+  - name: Check if this machine is Rasberry Pi
+    set_fact:
+      IsRaspi: "{{ 'raspi' in result.stdout|lower }}"
+
+  - name: Deploy /etc/ssh/config
+    template:
+      src: ssh_config.j2
+      dest: ~/.ssh/config
+      backup: yes
+
+  - name: Transfer SSH keys
+    copy:
+      src: "{{ item }}"
+      dest: ~/.ssh/
+    with_fileglob:
+      - "~/.ssh/id_rsa*"
+
+  - name: chmod 700 ~/.ssh/*
+    file:
+      mode: "0700"
+      path: ~/.ssh/*
+
+  - name: chmod 600 ~/.ssh/id_rsa
+    file:
+      mode: "0600"
+      path: ~/.ssh/id_rsa
+
+  - name: Set authorized keys
+    ansible.posix.authorized_key:
+      user: "{{ ansible_user }}"
+      key: "{{ lookup('file', home_contents_dir_in_host + '/.ssh/authorized_keys') }}"
+
+
+- name: Disable motd-news.service
+  tags:
+    - motd-news
+  become: yes
+  service:
+    name: "{{ item }}"
+    enabled: no
+    state: stopped
+  loop:
+    - motd-news
+    - motd-news.timer
+
+
+- name: ufw
+  tags:
+    - ufw
+  block:
+  - name: check if ufw is configured
+    become: yes
+    shell: |
+      open_ports=$(ufw status | grep -P "^\d+ +ALLOW" | cut -d " " -f 1)
+      ports=(22 80 443 {{ sshd_port }})
+      for port in ${ports[@]}; do
+        if ! echo "$open_ports" | grep --quiet "^${port}$"; then
+          echo "$port is not open" >&2
+        fi
+      done
+    ignore_errors: yes
+    register: result
+    changed_when: no
+    check_mode: no
+
+  - when: result is failed
+    block:
+    - name: Configure ufw
+      become: yes
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        comment: "{{ item.comment }}"
+      loop:
+        - { port: "22", comment: "SSH" }
+        - { port: "80", comment: "HTTP" }
+        - { port: "443", comment: "HTTPS" }
+
+    - name: Enable ufw
+      become: yes
+      community.general.ufw:
+        default: deny
+        state: enabled
+
+
+- name: On home directory
+  tags:
+    - home
+  block:
+  - name: Transfer ~/.config directory
+    copy:
+      src: "{{ home_contents_dir_in_host }}/.config"
+      dest: ~/
+
+  - name: Create ~/bin directory if not exists
+    file:
+      state: directory
+      path: "{{ home_bin_path }}"
+
+  - name: Check if ~/.hushlogin exists
+    stat:
+      path: ~/.hushlogin
+    register: result
+
+  - name: touch ~/.hushlogin to stop daily welcome message
+    when: not result.stat.exists
+    file:
+      state: touch
+      path: ~/.hushlogin
+
+  - name: stop beep sound
+    blockinfile:
+      block: |
+        # stop beep sound
+        set bell-style none
+      path: ~/.inputrc
+      create: yes
+      insertafter: EOF
+
+- name: byobu
+  tags:
+    - byobu
+  block:
+  - name: Create ~/.byobu directory if not exists
+    file:
+      state: directory
+      path: ~/.byobu
+
+  - name: Set mouse mode enabled on byobu
+    lineinfile:
+      line: set -g mouse on
+      path: ~/.byobu/profile.tmux
+      create: yes
+
+  - name: .byobu/datetime.tmux
+    lineinfile:
+      line: BYOBU_DATE="%m/%d "
+      path: ~/.byobu/datetime.tmux
+      regexp: ^BYOBU_DATE=
+      create: yes
+
+  - name: .byobu/status
+    lineinfile:
+      line: >-
+        tmux_right=" network #disk_io #custom #entropy #raid reboot_required updates_available #apport #services
+        #mail #users #uptime #fan_speed cpu_temp #battery wifi_quality #processes #load_average #cpu_count cpu_freq
+        memory #swap disk #whoami hostname #ip_address #time_utc date time"
+      path: ~/.byobu/status
+      regexp: ^tmux_right=
+      create: yes
+
+  - name: .byobu/statusrc
+    lineinfile:
+      line: NETWORK_UNITS=bytes
+      path: ~/.byobu/statusrc
+      regexp: ^# *NETWORK_UNITS=bytes
+      create: yes
+
+  - name: Make sure byobu launches at user login
+    lineinfile:
+      line: _byobu_sourced=1 . /usr/bin/byobu-launch 2>/dev/null || true
+      path: ~/.zprofile
+      create: yes
+
+
+- name: nano
+  tags:
+    - nano
+  block:
+  - name: Create nano's backup directory if not exists
+    file:
+      state: directory
+      path: "{{ nanobackup_path }}"
+
+  - name: Transfer .nanorc
+    template:
+      src: nanorc.j2
+      dest: "{{ home_path }}/.nanorc"
+      backup: yes
+
+  - name: Check if backup of /etc/nanorc exists
+    stat:
+      path: /etc/nanorc.orig
+    register: result
+
+  - name: backup original nanorc
+    when: not result.stat.exists
+    become: yes
+    shell: |
+      mv /etc/nanorc {{ home_path }}/nanorc.orig
+
+  - name: Hardlink .nanorc
+    file:
+      state: hard
+      path: /etc/nanorc
+      src: "{{ home_path }}/.nanorc"
+
+
+- name: zsh
+  tags:
+    - zsh
+  block:
+  - name: Check if ~/.zshrc exists
+    stat:
+      path: ~/.zshrc
+    register: result
+
+  - name: Transfer ~/.zshrc if not exists
+    when: not result.stat.exists
+    copy:
+      src: "{{ home_contents_dir_in_host }}/.zshrc"
+      dest: ~/.zshrc
+
+  - name: command -v zsh
+    shell: command -v zsh
+    register: result
+    changed_when: no
+    check_mode: no
+
+  - name: Change login shell to zsh
+    become: yes
+    user:
+      name: "{{ ansible_user }}"
+      shell: "{{ result.stdout }}"
+
+
+  # junegunn/fzf: A command-line fuzzy finder
+  # https://github.com/junegunn/fzf
+- name: Install fzf
+  tags:
+    - fzf
+    - github
+  vars:
+    get_version:
+      cmd: fzf --version
+      regex: "^[\\d.]+"
+    github:
+      repo: junegunn/fzf
+      arch2name:
+        armv7l: linux_armv7.tar.gz
+        aarch64: linux_arm64.tar.gz
+  block:
+  - name: Install fzf
+    include_tasks: GetUrlFromGithub.yml
+
+  - name: Download and Install
+    when: binary_url is defined
+    shell: |
+      git clone --depth 1 --quiet https://github.com/junegunn/fzf.git ~/.fzf
+      ~/.fzf/install --all
+
+  - name: Make sure fzf loaded in bashrc
+    lineinfile:
+      line: "[ -f ~/.fzf.bash ] && source ~/.fzf.bash"
+      path: ~/.bashrc
+
+
+  # sharkdp/bat: A cat(1) clone with wings.
+  # https://github.com/sharkdp/bat
+- name: Install bat
+  tags:
+    - bat
+    - github
+  vars:
+    get_version:
+      cmd: bat --version
+      regex: "^[\\d.]+"
+    github:
+      repo: sharkdp/bat
+      arch2name:
+        armv7l: armhf.deb
+        aarch64: arm64.deb
+  block:
+  - name: Install bat
+    include_tasks: GetUrlFromGithub.yml
+
+  - name: Download and Install the .deb package
+    when: binary_url is defined
+    become: yes
+    apt:
+      deb: "{{ binary_url }}"
+
+
+  # zyedidia/micro: A modern and intuitive terminal-based text editor
+  # https://github.com/zyedidia/micro
+- name: Install micro
+  tags:
+    - micro
+    - github
+  vars:
+    get_version:
+      cmd: micro --version
+      regex: "(?<=Version. )[\\d.]+"
+    github:
+      repo: zyedidia/micro
+      arch2name:
+        armv7l: arm.tar.gz
+        aarch64: arm64.tar.gz
+  block:
+  - name: Install micro
+    include_tasks: GetUrlFromGithub.yml
+
+  - name: Download the package
+    when: binary_url is defined
+    shell: |
+      wget -q -O - "{{ binary_url }}" | tar -xzf - "micro-{{ latest_version }}/micro"
+      mv "micro-{{ latest_version }}/micro" {{ home_path }}/micro
+      rm -rf "micro-{{ latest_version }}"
+
+  - name: Install the package
+    when: binary_url is defined
+    become: yes
+    shell: |
+      install {{ home_path }}/micro /usr/bin/micro
+      rm {{ home_path }}/micro
+
+
+- name: Install AnyDesk
+  tags:
+    - anydesk
+  block:
+  - name: anydesk GPG key を追加
+    become: yes
+    apt_key:
+      url: https://keys.anydesk.com/repos/DEB-GPG-KEY
+
+  - name: Add anydesk repository
+    become: yes
+    apt_repository:
+      repo: deb http://deb.anydesk.com/ all main
+      filename: anydesk-stable.list
+      update_cache: yes
+
+  - name: Install anydesk
+    become: yes
+    apt:
+      name:
+        - anydesk
+
+
+- name: Install VSCode
+  tags:
+    - vscode
+  block:
+  - name: Download and Install the .deb package
+    become: yes
+    apt:
+      deb: "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64"
+
+
+- name: Install Vivaldi
+  tags:
+    - vivaldi
+  block:
+  - name: Fetch vivaldi's download page
+    uri:
+      url: https://vivaldi.com/ja/download/
+      return_content: yes
+    register: html
+
+  - name: Get vivaldi's deb url
+    shell:
+      cmd: grep -oiP '(?<=href=")[^"]+amd64\.deb(?=")'
+      stdin: "{{ html.content }}"
+    register: deb_url
+
+  - name: Download and Install the .deb package
+    become: yes
+    apt:
+      deb: "{{ deb_url.stdout }}"
+
+
+- name: Install Barrier
+  tags:
+    - barrier
+  block:
+  - name: Download and Install the .deb package
+    become: yes
+    apt:
+      name:
+        - flatpak
+        - gnome-software-plugin-flatpak
+
+  - name: Add the flathub flatpak repository remote to the user installation
+    community.general.flatpak_remote:
+      name: flathub
+      state: present
+      flatpakrepo_url: https://flathub.org/repo/flathub.flatpakrepo
+
+  - name: Install the package
+    community.general.flatpak:
+      name: com.github.debauchee.barrier
+
+
+- name: Remove Thunderbird
+  tags:
+    - thunderbird
+  block:
+  - name: Remove and purge Thunderbird
+    become: yes
+    apt:
+      name: thunderbird
+      state: absent
+      purge: yes
+
+
+- name: Install go
+  tags:
+    - golang
+  block:
+  - name: Add go repository
+    become: yes
+    apt_repository:
+      repo: ppa:longsleep/golang-backports
+      update_cache: yes
+
+  - name: Install go
+    become: yes
+    apt:
+      name:
+        - golang-go
+
