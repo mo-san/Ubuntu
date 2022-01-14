@@ -100,11 +100,12 @@
       - git
       - highlight # fzf のプレビューに色を付けるのに必要
       - jq
-      - libraspberrypi-bin # vcgencmd, raspistill などを使えるようにする
       - locate
-      - ncdu # ディスク占有率を視覚的に表示する
+      - neovim
       - ne # nice editor
+      - ncdu # ディスク占有率を視覚的に表示する
       - openssh-server
+      - ripgrep # 高速で便利なgrep
       - source-highlight # lessに色を付けるのに必要
       - tree
       - unar
@@ -113,13 +114,17 @@
       - zsh
       - zsh-syntax-highlighting
 
-
   - name: Install CLI apps
     apt:
       name:
       - htop
       - xbindkeys
       - xclip
+
+  - name: Install utility packages for raspberry pi
+    apt:
+      name:
+      - libraspberrypi-bin # vcgencmd, raspistill などを使えるようにする
 
 
   - name: Remove dependencies that are no longer required

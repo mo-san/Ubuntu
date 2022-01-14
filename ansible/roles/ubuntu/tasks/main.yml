@@ -85,15 +85,17 @@
       - cifs-utils # samba 経由でマウントする
       - curl
       - dnsutils
-      - fcitx-mozc
       - fd-find # 高速な find
       - gdebi-core
       - git
       - highlight # fzf のプレビューに色を付けるのに必要
       - jq
       - locate
+      - neovim
+      - ne # nice editor
       - ncdu # ディスク占有率を視覚的に表示する
       - openssh-server
+      - ripgrep # 高速で便利なgrep
       - source-highlight # lessに色を付けるのに必要
       - tree
       - unar
@@ -101,7 +103,6 @@
       - xsel # コピーに必要
       - zsh
       - zsh-syntax-highlighting
-
 
   - name: Install CLI apps
     apt:
@@ -117,6 +118,7 @@
       - clipit
       - conky-all
       - easystroke
+      - fcitx-mozc
       - grub-customizer
       - guake
       - simplescreenrecorder
