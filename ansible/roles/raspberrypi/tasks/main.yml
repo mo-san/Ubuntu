@@ -1,3 +1,48 @@
+- name: without password
+  tags:
+    - sudoers
+  block:
+  - name: sudoers
+    become: yes
+    blockinfile:
+      block: |
+        Defaults env_keep += "PATH"
+        Defaults !lecture
+        Defaults !secure_path
+        Defaults !authenticate
+        Defaults !requiretty
+      path: /etc/sudoers.d/default_options
+      create: yes
+
+
+ - name: change root password
+   become: yes
+   tags:
+     - password
+   user:
+     name: root
+     password: "$6$dododo$JzubjNW20/YOtqiNK9Qih2nWVQ9g1GvUkRbwiTyQYMqeIsS7svEt.aK.wvFQuad4mZDRl2kJF5T1FyeEqR.2V/"
+
+
+- name: keyboard settings
+  tags:
+    - keyboard
+  become: yes
+  - name: XKBOPTIONS
+    lineinfile:
+      path: /etc/default/keyboard
+      regexp: '^\s*XKBOPTIONS\s*='
+      line: XKBOPTIONS="ctrl:nocaps"
+      create: yes
+
+  - name: kernel.sysrq
+    lineinfile:
+      path: /etc/sysctl.d/10-magic-sysrq.conf
+      line: kernel.sysrq = 1
+      regexp: '^\s*kernel.sysrq\s*='
+      create: yes
+
+
 - name: Set a hostname
   become: yes
   block:
@@ -36,34 +81,46 @@
       - manpages-ja
       - manpages-ja-dev
 
-  - name: Install python packages
+  - name: Install pip for python
     apt:
       name:
       - python-setuptools
       - python3-pip
 
-  - name: Install utility packages 1
+  - name: Install utility packages
     apt:
       name:
       - avahi-daemon
+      - byobu
+      - cifs-utils # samba 経由でマウントする
+      - curl
       - dnsutils
+      - fd-find # 高速な find
+      - gdebi-core
+      - git
+      - highlight # fzf のプレビューに色を付けるのに必要
       - jq
+      - libraspberrypi-bin # vcgencmd, raspistill などを使えるようにする
       - locate
+      - ncdu # ディスク占有率を視覚的に表示する
+      - ne # nice editor
+      - openssh-server
+      - source-highlight # lessに色を付けるのに必要
       - tree
       - unar
       - unzip
+      - xsel # コピーに必要
+      - zsh
+      - zsh-syntax-highlighting
 
-  - name: Install utility packages 2
+
+  - name: Install CLI apps
     apt:
       name:
-      - cifs-utils # samba 経由でマウントする
-      - fd-find # 高速な find
-      - highlight # fzf のプレビューに色を付けるのに必要
-      - libraspberrypi-bin # vcgencmd, raspistill などを使えるようにする
-      - ne # nice editor
-      - ncdu # ディスク占有率を視覚的に表示する
-      - source-highlight # lessに色を付けるのに必要
-      - xsel # コピーに必要
+      - htop
+      - xbindkeys
+      - xclip
+
 
   - name: Remove dependencies that are no longer required
     apt:
@@ -88,25 +145,25 @@
         - yq
 
 
-# - name: Mount usb drive
-#   tags:
-#     - fstab
-#   block:
-#   - name: Create directory for mount
-#     become: yes
-#     file:
-#       state: directory
-#       path: "{{ usbdrive_path }}"
-#       mode: "0777"
+ - name: Mount usb drive
+   tags:
+     - fstab
+   block:
+   - name: Create directory for mount
+     become: yes
+     file:
+       state: directory
+       path: "{{ usbdrive_path }}"
+       mode: "0777"
 
-#   - name: Mount usb drive
-#     become: yes
-#     ansible.posix.mount:
-#       path: "{{ usbdrive_path }}"
-#       src: "UUID={{ usbdrive_uuid }}"
-#       fstype: ext4
-#       opts: defaults,noatime,nofail,x-systemd.device-timeout=1
-#       state: present
+   - name: Mount usb drive
+     become: yes
+     ansible.posix.mount:
+       path: "{{ usbdrive_path }}"
+       src: "UUID={{ usbdrive_uuid }}"
+       fstype: ext4
+       opts: defaults,noatime,nofail,x-systemd.device-timeout=1
+       state: present
 
 
 - name: Led pattern
@@ -181,6 +238,11 @@
       dest: ~/.ssh/
     with_fileglob:
       - "~/.ssh/id_rsa*"
+
+  - name: chmod 700 ~/.ssh/*
+    file:
+      mode: "0700"
+      path: ~/.ssh/*
 
   - name: chmod 600 ~/.ssh/id_rsa
     file:
@@ -268,7 +330,7 @@
       path: ~/.hushlogin
     register: result
 
-  - name: touch ~/.hushlogin
+  - name: touch ~/.hushlogin to stop daily welcome message
     when: not result.stat.exists
     file:
       state: touch
@@ -307,7 +369,10 @@
 
   - name: .byobu/status
     lineinfile:
-      line: "tmux_right=\" network #disk_io #custom #entropy #raid reboot_required updates_available #apport #services #mail #users #uptime #fan_speed cpu_temp #battery wifi_quality #processes #load_average #cpu_count cpu_freq memory #swap disk #whoami hostname #ip_address #time_utc date time\""
+      line: >-
+        tmux_right=" network #disk_io #custom #entropy #raid reboot_required updates_available #apport #services
+        #mail #users #uptime #fan_speed cpu_temp #battery wifi_quality #processes #load_average #cpu_count cpu_freq
+        memory #swap disk #whoami hostname #ip_address #time_utc date time"
       path: ~/.byobu/status
       regexp: ^tmux_right=
       create: yes
@@ -374,15 +439,8 @@
       src: "{{ home_contents_dir_in_host }}/.zshrc"
       dest: ~/.zshrc
 
-  - name: Install zsh
-    become: yes
-    apt:
-      name:
-        - zsh
-        - zsh-syntax-highlighting
-
-  - name: which zsh
-    shell: which zsh
+  - name: command -v zsh
+    shell: command -v zsh
     register: result
     changed_when: no
     check_mode: no
