@@ -1,0 +1,5 @@
+[Desktop Entry]
+Exec=xinput set-prop "SIS0457:00 0457:11ED" "Coordinate Transformation Matrix" 0 1 0 -1 0 1 0 0 1
+Name=Rotate Screen Clockwise
+Type=Application
+Version=1.0

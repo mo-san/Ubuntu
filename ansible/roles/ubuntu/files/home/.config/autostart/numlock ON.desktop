@@ -1,0 +1,5 @@
+[Desktop Entry]
+Exec=numlockx &
+Name=numlock ON
+Type=Application
+Version=1.0

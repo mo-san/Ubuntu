@@ -1,0 +1,5 @@
+[Desktop Entry]
+Exec=guake
+Name=Guake Terminal
+Type=Application
+Version=1.0
