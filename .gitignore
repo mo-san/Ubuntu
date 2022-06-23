@@ -3,9 +3,12 @@
 log/
 logs/
 
-id_rsa
-gdrive-credentials.json
-*.tar.gz
 .bash_history
 .zsh_history
+
 *.bak
+*.tar.gz
+
+.samba_credentials
+id_rsa
+gdrive-credentials.json
