@@ -1,5 +1,6 @@
 - name: Get app's version
-  shell: "{{ get_version.cmd }} | grep -oP '{{ get_version.regex }}'"
+  shell: |
+    {{ get_version.cmd }} | grep -oP "{{ get_version.regex }}"
   register: _version
   ignore_errors: yes
   changed_when: no
