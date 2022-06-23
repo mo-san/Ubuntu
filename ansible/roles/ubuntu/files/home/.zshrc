@@ -1,8 +1,9 @@
 # 環境の確認
-case `uname -snrm` in
+case `uname --kernel-name --kernel-release --machine` in
 	*raspi*) export KANKYO="PI" ;; # Raspberry Pi
 	*microsoft*) export KANKYO="WSL" ;; # Windows 上の WSL
 	*iPad*) export KANKYO="IOS" ;; # iPad
+	*MANJARO*) export KANKYO="MANJARO" ;; # mabox or manjaro
 	*) export KANKYO="UNKNOWN" ;;
 esac
 [ ! -z $(printenv ANDROID_ROOT) ] && export KANKYO="ANDROID" # Android 上の Termux
@@ -14,30 +15,29 @@ else
 fi
 
 # ホスト名
-export HOST=`uname -n`
+export HOST=`uname --nodename`
 
-# which micro >/dev/null 2>&1 && echo yes || echo no
+# if [ $KANKYO = "PI" -o $KANKYO = "WSL"  -o $KANKYO = "MANJARO" ]; then
+case $KANKYO in
+	"PI"|"WSL"|"MANJARO")
+		# 各言語のパッケージマネージャーのパスを通す
+		export PATH="/usr/local/go/bin:${HOME}/go:${HOME}/go/bin:${HOME}/.cargo/bin:/usr/local/rbenv/bin:$PATH"
 
-if [ $KANKYO = "PI" -o $KANKYO = "WSL" ]; then
-# case $KANKYO in
-	# "PI"|"WSL")
-	# 各言語のパッケージマネージャーのパスを通す
-	export PATH="/usr/local/go/bin:${HOME}/go:${HOME}/go/bin:${HOME}/.cargo/bin:/usr/local/rbenv/bin:$PATH"
-
-	export GOPATH="${HOME}/go"
-	# デスクトップ環境
-	# export DISPLAY=
-	# case KANKYO in
-	# 	"PI") export DISPLAY=192.168.0.3:0.0 ;;
-	# 	"WSL") export DISPLAY=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}'):0.0 ;;
-	# esac
-fi
-# esac
+		export GOPATH="${HOME}/go"
+esac
+# fi
 
 export PATH="${HOME}/bin:${HOME}/opt:${HOME}/.local/bin:/opt:/snap/bin:$PATH"
 
+# ディスプレイ出力がなくてもあるように見せかける
+# export DISPLAY=
+# case KANKYO in
+# 	"PI") export DISPLAY=192.168.0.3:0.0 ;;
+# 	"WSL") export DISPLAY=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}'):0.0 ;;
+# esac
+
 # GNU Source-highlight
-export LESS='-R --QUIET --long-prompt --HILITE-UNREAD --tabs=4'
+export LESS='--RAW-CONTROL-CHARS --QUIET --long-prompt --HILITE-UNREAD --tabs=4'
 [ -d /usr/share/source-highlight/ ] && export LESSOPEN='| /usr/share/source-highlight/src-hilite-lesspipe.sh %s'
 
 
@@ -64,7 +64,7 @@ export LESS='-R --QUIET --long-prompt --HILITE-UNREAD --tabs=4'
 # 	| M-q | 今の入力を退避       |
 # 	EOS
 
-if [ $KANKYO = "PI" -o $KANKYO = "WSL" ]; then
+if [ $KANKYO = "PI" -o $KANKYO = "WSL" -o $KANKYO = "MANJARO" ]; then
 command cat <<- EOS
 	【fzf 検索】 !i 最上位, ^t 現在地, ^r 履歴, 末尾「**<タブ>」 / "^music .mp3$ foo !exc", "^core go$ | rb$ | py$"
 	EOS
@@ -154,22 +154,68 @@ alias sudo="sudo "
 alias -g L="| less"
 alias -g H=" --help"
 alias -g V=" --version"
-isCommand xsel && alias -g C="| xsel --input --clipboard"
+# isCommand xsel && alias -g C="| xsel --input --clipboard"
 
 # apt 短縮形
-alias aptin="sudo apt install -y"
-alias aptinstall="sudo apt install -y"
-alias aptrm="sudo apt remove"
-alias aptremove="sudo apt remove"
-alias aptsc="sudo apt search --names-only"
-alias aptsearch="sudo apt search --names-only"
-alias aptls="sudo apt list"
-alias aptlist="sudo apt list"
-alias aptup="sudo apt update"
-alias aptupgr="sudo apt upgrade"
-alias aptupgrade="sudo apt upgrade"
-alias aptfresh="echo '*** Update ***\n' && sudo apt-get update && echo -e '\n*** Upgrade ***\n' && sudo apt-get --quiet upgrade && echo -e '\n*** AutoRemove ***\n' && sudo apt-get --quiet -y autoremove"
-alias aptinstalled="apt list --installed"
+if isCommand apt; then
+	alias aptinstall="sudo apt install -y"
+	alias aptin="aptinstall"
+
+	alias aptinstalled="dpkg --list | grep ^i"
+	alias aptls="aptinstalled"
+
+	alias aptremove="sudo apt remove"
+	alias aptrm="aptremove"
+
+	alias aptsearch="sudo apt search --names-only"
+	alias aptsc="aptsearch"
+
+	alias aptup="sudo apt update"
+
+	alias aptupgrade="sudo apt upgrade"
+	alias aptupgr="aptupgrade"
+
+	aprfresh() {
+		echo "*** Update ***\n"
+		sudo apt-get update
+		echo -e "\n*** Upgrade ***\n"
+		if [ "$1" = "-y" ]
+		then sudo apt-get --quiet -y upgrade
+		else sudo apt-get --quiet upgrade
+		fi
+		echo -e "\n*** AutoRemove ***\n"
+		sudo apt-get --quiet -y autoremove
+	}
+fi
+
+if [ $KANKYO = "MANJARO" ]; then
+	alias pacinstall="sudo pacman -S"
+	alias pacin="pacinstall"
+
+	alias pacinstalled="pacman -Q"
+	alias pacls="pacinstalled"
+
+	alias pacremove="sudo pacman -Rs"
+	alias pacrm="pacremove"
+
+	alias pacsearch="sudo pacman -Ss" # 名前だけは？
+	alias pacsc="pacsearch"
+
+	alias pacup="sudo pacman -Sy"
+
+	alias pacupgrade="sudo pacman -Syu"
+	alias pacupgr="pacupgrade"
+
+	alias pacautoremove="sudo pacman -Qdtq | sudo pacman -Rs -"
+
+	pacfresh() {
+		echo -e "*** Update & Upgrade ***\n"
+		if [ "$1" = "-y" ]
+		then sudo pacman -Syu --noconfirm
+		else sudo pacman -Syu
+		fi
+	}
+fi
 
 # 複数ファイルのmv
 # 例: zmv *.txt *.txt.bk
@@ -209,7 +255,7 @@ alias grep="grep -iP"
 alias less="less --QUIET --LINE-NUMBERS --long-prompt --HILITE-UNREAD --tabs=4"
 
 # man の表示に使う less でもビープ音を止める
-! isCommand bat && alias man="man -P 'less --QUIET'"
+! isCommand bat && alias man="man --pager 'less --RAW-CONTROL-CHARS --QUIET'"
 
 # シンボリックリンク作成時に既に同名があれば末尾に数字 (.~1~) を付けてバックアップする
 alias ln="ln --backup=numbered"
@@ -239,8 +285,10 @@ isCommand trash && alias rm="trash "
 isCommand batcat && alias bat="batcat "
 if isCommand bat; then
 	function tailbat() { sudo tail -f $* | bat --paging=never -l log }
+	alias bat="bat --theme=Coldark-Dark --map-syntax='*rc:INI' --map-syntax='*.conf:INI' "
 	alias cat="bat "
 	alias -g B="| bat"
+	alias -g C="| bat"
 	export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 fi
 
@@ -404,6 +452,14 @@ case ${(L)HOST} in # 変数をすべて小文字に変換する
 		LPROMPT1="%{%F{238}%K{193}%}%d" # grey on yellowgreen
 		RPROMPT2="%{%F{235}%K{228}%} %n@%m" # grey (#262626) on lightyellow ("ffff87")
 		;;
+	"asus")
+		LPROMPT1="%{%F{238}%K{193}%}%d" # grey on yellowgreen
+		RPROMPT2="%{%F{235}%K{228}%} %n@%m" # grey (#262626) on lightyellow ("ffff87")
+		;;
+	"lenovo")
+		LPROMPT1="%{%F{238}%K{193}%}%d" # grey on yellowgreen
+		RPROMPT2="%{%F{235}%K{228}%} %n@%m" # grey (#262626) on lightyellow ("ffff87")
+		;;
 	*)
 		LPROMPT1="%{%F{238}%K{254}%}%d" # grey
 		RPROMPT2="%{%F{253}%K{233}%} %n@%m" # grey (#dadada) on #121212
@@ -423,17 +479,15 @@ unset RESET LPROMPT1 LPROMPT2 RPROMPT1 RPROMPT2
 # 音量指定(メッセージを出さない)
 # eval "amixer -q set Master 10%"
 
-#
-# zsh-Syntax-Highlighting
-#
-test -d /usr/share/zsh-syntax-highlighting && source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-
-#
+#====================
 # fzf (fuzzy finder)
-#
+#====================
 # 更新コマンド: cd ~/bin/fzf && git pull && ./install
-if [ -f ~/.fzf.zsh ]; then
-	source ~/.fzf.zsh
+if [ -f ~/.fzf.zsh -o -f /usr/share/fzf/completion.zsh ]; then
+	[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+	[ -f /usr/share/fzf/completion.zsh ] && source /usr/share/fzf/completion.zsh
+	[ -f /usr/share/fzf/key-bindings.zsh ] && source /usr/share/fzf/key-bindings.zsh
+
 	export FZF_DEFAULT_OPTS="--height 40% --multi --exact --reverse --ansi --cycle --prompt='▶' --bind '?:toggle-preview'"
 
 	# tmux を使用中であればその機能を利用する
@@ -458,10 +512,6 @@ if [ -f ~/.fzf.zsh ]; then
 	# 現在地以下のフォルダーへ移動のオプション
 	export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
 
-	alias h="history -i 1 | $(__fzfcmd) --tac --no-sort | sed -re 's/^ *[0-9]+ *[0-9-]{10} [0-9:]+ *//'"
-	zle     -N    fzf-locate-widget
-	bindkey '\ei' fzf-locate-widget
-
 	# ALT-I - locate での検索結果を取り出す
 	fzf-locate-widget() {
 		local selected
@@ -477,11 +527,21 @@ if [ -f ~/.fzf.zsh ]; then
 	__fzfcmd() {
 		__fzf_use_tmux__ && echo "fzf-tmux -d${FZF_TMUX_HEIGHT:-40%}" || echo "fzf"
 	}
+
+	alias h="history -i 1 | $(__fzfcmd) --tac --no-sort | sed -re 's/^ *[0-9]+ *[0-9-]{10} [0-9:]+ *//'"
+	zle     -N    fzf-locate-widget
+	bindkey '\ei' fzf-locate-widget
 fi
 
-#
+#====================
 # docker-compose 補完
-#
+#====================
 fpath=(~/.zsh/completion $fpath)
 autoload -Uz compinit && compinit -i
 
+#====================
+# zsh-Syntax-Highlighting
+# https://github.com/zsh-users/zsh-syntax-highlighting
+#====================
+[ -d /usr/share/zsh-syntax-highlighting ] && source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+[ -d /usr/share/zsh/plugins/zsh-syntax-highlighting ] && source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
