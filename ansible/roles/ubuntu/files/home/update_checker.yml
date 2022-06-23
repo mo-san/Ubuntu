@@ -1,0 +1,24 @@
+- name: fzf
+  cmd: fzf --version
+  regex: ^[0-9.]+
+  repo: junegunn/fzf
+  arch2name:
+    armv7l: linux_armv7.tar.gz
+    aarch64: linux_arm64.tar.gz
+    x86_64: linux_arm64.tar.gz
+- name: bat
+  cmd: bat --version
+  regex: "(?<= )[0-9.]+"
+  repo: sharkdp/bat
+  arch2name:
+    armv7l: armhf.deb
+    aarch64: arm64.deb
+    x86_64: musl_.*_amd64.deb
+- name: micro
+  cmd: micro --version
+  regex: "(?<=Version: )[0-9.]+"
+  repo: zyedidia/micro
+  arch2name:
+    armv7l: arm.tar.gz
+    aarch64: arm64.tar.gz
+    x86_64: amd64.deb
