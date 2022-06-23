@@ -9,6 +9,6 @@ logs/
 *.bak
 *.tar.gz
 
-.samba_credentials
+**/.samba_credentials
 id_rsa
 gdrive-credentials.json
