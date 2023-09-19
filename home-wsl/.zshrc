@@ -1,5 +1,9 @@
 # 環境の確認
-case `uname --kernel-name --kernel-release --machine` in
+# uname -s: Print the kernel name
+# uname -r: Print the kernel release
+# uname -m: Print the machine hardware name
+case `uname -srm` in
+	*Darwin*) export KANKYO="MAC" ;; # macOS
 	*raspi*) export KANKYO="PI" ;; # Raspberry Pi
 	*microsoft*) export KANKYO="WSL" ;; # Windows 上の WSL
 	*iPad*) export KANKYO="IOS" ;; # iPad
@@ -15,7 +19,7 @@ else
 fi
 
 # ホスト名
-export HOST=`uname --nodename`
+export HOST=$(uname -n)
 
 # if [ $KANKYO = "PI" -o $KANKYO = "WSL"  -o $KANKYO = "MANJARO" ]; then
 case $KANKYO in
@@ -36,9 +40,12 @@ export PATH="${HOME}/bin:${HOME}/opt:${HOME}/.local/bin:/opt:/snap/bin:$PATH"
 # 	"WSL") export DISPLAY=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}'):0.0 ;;
 # esac
 
+# ====================
 # GNU Source-highlight
 export LESS='--RAW-CONTROL-CHARS --QUIET --long-prompt --HILITE-UNREAD --tabs=4'
+
 [ -d /usr/share/source-highlight/ ] && export LESSOPEN='| /usr/share/source-highlight/src-hilite-lesspipe.sh %s'
+# ====================
 
 
 # チートシート
@@ -91,10 +98,15 @@ function mkcd() {
 # ディレクトリを移動したときに実行される
 function chpwd() {
 	# ファイル数が多くなければ ls
-	if [ $(/bin/ls -1U . | wc --lines) -le 50 ]; then
-		/bin/ls --escape --classify --color --group-directories-first --format=horizontal -m .
+	if [ "$(/bin/ls -1U . | wc -l | tr -d ' ')" -le 50 ]; then
+		if [[ $KANKYO = "MAC" ]]; then
+			/bin/ls -FG
+		else  # Linux and other UNIX systems
+			/bin/ls --escape --classify --color=auto --group-directories-first --format=horizontal -m .
+		fi
 	fi
 }
+
 
 # ターミナルのタイトルを設定する
 case $TERM in
@@ -232,9 +244,14 @@ alias ..="cd ../"
 #alias h="fc -lt '%F %T' 1"
 
 # ls
-alias sl="ls --escape --classify --color --group-directories-first -cv --human-readable --almost-all -l"
-alias l="ls --escape --classify --color --group-directories-first -cv"
-alias ls="l"
+if [[ $KANKYO = "MAC" ]]; then
+	alias sl="ls -lhO@ -v"
+	alias ls="ls -Gv"
+else  # Linux and other UNIX systems
+	alias sl="/bin/ls --escape --classify --color --group-directories-first -cv --human-readable --almost-all -l"
+	alias ls="/bin/ls --escape --classify --color=auto --group-directories-first -cv"
+fi
+alias l="ls"
 
 # コピーの上書き前に確認する
 alias cp="cp -i"
@@ -252,10 +269,33 @@ alias grep="grep -iP"
 alias less="less --QUIET --LINE-NUMBERS --long-prompt --HILITE-UNREAD --tabs=4"
 
 # man の表示に使う less でもビープ音を止める
-! isCommand bat && alias man="man --pager 'less --RAW-CONTROL-CHARS --QUIET'"
+if [[ $KANKYO = "MAC" ]]; then  # macOS
+	! isCommand bat && alias man="man -P 'less -Rq'"
+else # Linux and other Unix-like systems
+	! isCommand bat && alias man="man --pager 'less --RAW-CONTROL-CHARS --QUIET'"
+fi
 
+# =====
 # シンボリックリンク作成時に既に同名があれば末尾に数字 (.~1~) を付けてバックアップする
 alias ln="ln --backup=numbered"
+
+# This function checks if the target file already exists.
+# If it does, the function creates a numbered backup copy before running the ln command.
+if [[ $KANKYO = "MAC" ]]; then
+    # Custom logic for macOS, since --backup=numbered is not supported
+	my_ln() {
+		if [[ -e $2 ]]; then
+			counter=1
+			while [[ -e "$2.$counter" ]]; do
+				((counter++))
+			done
+			cp "$2" "$2.$counter"
+		fi
+		ln "$@"
+	}
+	alias ln=my_ln
+fi
+# =====
 
 # ディレクトリツリー
 # -h: ファイルサイズを人間に読みやすく
@@ -365,7 +405,8 @@ zstyle ':completion:*' auto-description 'specify: %d'
 zstyle ':completion:*' completer _expand _complete _correct _approximate
 zstyle ':completion:*' format 'Completing %d'
 zstyle ':completion:*' group-name ''
-eval "$(dircolors -b)"
+
+isCommand fdfind && eval "$(dircolors -b)"
 zstyle ':completion:*:default' list-colors ${(s.:.)LS_COLORS}
 zstyle ':completion:*' list-colors ''
 zstyle ':completion:*' list-prompt %SAt %p: Hit TAB for more, or the character to insert%s
@@ -498,7 +539,8 @@ if [ -f ~/.fzf.zsh -o -f /usr/share/doc/fzf/examples/completion.zsh ]; then
 	[ -f /usr/share/doc/fzf/examples/completion.zsh ] && source /usr/share/doc/fzf/examples/completion.zsh
 	[ -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && source /usr/share/doc/fzf/examples/key-bindings.zsh
 
-	export FZF_DEFAULT_OPTS="--height 40% --multi --exact --reverse --ansi --cycle --prompt='▶' --bind '?:toggle-preview'"
+	# export FZF_DEFAULT_OPTS="--height 40% --multi --exact --reverse --ansi --cycle --prompt='▶' --bind '?:toggle-preview'"
+	export FZF_DEFAULT_OPTS="--height 40% --multi --exact --reverse --ansi --cycle --prompt='▶'"
 
 	# tmux を使用中であればその機能を利用する
 	export FZF_TMUX=1
