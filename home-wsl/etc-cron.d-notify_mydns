@@ -1,0 +1,1 @@
+*/30 * * * * pi logger -t DynamicDNS グローバルIPアドレスは $(curl --silent https://ipv4.mydns.jp/login.html -u mydns794954:SuHZUXuo5cM | grep 'REMOTE ADDRESS' | command grep -oE '[0-9]+(\.[0-9]+){3}')
